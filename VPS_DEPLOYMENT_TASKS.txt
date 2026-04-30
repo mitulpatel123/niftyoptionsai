@@ -1,0 +1,627 @@
+NIFTYOPTIONSAI - GITHUB + HOSTINGER VPS DEPLOYMENT TASKS
+=========================================================
+
+Purpose
+-------
+Move the complete NIFTY/BANKNIFTY AI trading data system from the MacBook to a
+Hostinger KVM VPS running Ubuntu, so market data collection, feature building,
+labeling, and model training run automatically on the server.
+
+Important Reality Check
+-----------------------
+The server can run the pipeline automatically with cron/systemd.
+
+However, Dhan access tokens expire. Full "no human action ever" automation is
+only possible if Dhan token generation/refresh is automated safely.
+
+If Dhan only gives a daily user-generated access token, then one manual daily
+step remains:
+
+    update DHAN_ACCESS_TOKEN on the VPS before market open
+
+Everything else can be automatic.
+
+
+PART 1 - WHAT I WILL DO MANUALLY ON MY MACBOOK: UPLOAD CODE TO GITHUB
+=====================================================================
+
+1. Open Terminal on Mac:
+
+    cd /Users/mitulpatel/Test/Trading/niftyoptionsai
+
+2. Create a .gitignore file before uploading:
+
+    cat > .gitignore <<'EOF'
+    __pycache__/
+    *.pyc
+    .env
+    .venv/
+    venv/
+    .DS_Store
+    *.log
+    logs/
+    *.dump
+    *.backup
+    EOF
+
+3. Decide whether to upload model files.
+
+   Current model files are small, so uploading is okay, but not required.
+   If you do NOT want to upload model files, add this to .gitignore:
+
+    models/*.pkl
+
+4. Initialize git:
+
+    git init
+    git add .
+    git commit -m "Initial nifty options AI trading system"
+
+5. Create a new private GitHub repository.
+
+   Recommended repo name:
+
+    niftyoptionsai
+
+6. Connect local project to GitHub.
+
+   Replace YOUR_GITHUB_USERNAME:
+
+    git branch -M main
+    git remote add origin https://github.com/mitulpatel123/niftyoptionsai.git
+    git push -u origin main
+
+7. Give the VPS/agent this GitHub repo URL:
+
+    https://github.com/YOUR_GITHUB_USERNAME/niftyoptionsai
+
+
+PART 2 - TASKS FOR GPT ATLAS / VPS AGENT
+========================================
+
+You are setting up a Python + PostgreSQL + TimescaleDB market data system on a
+Hostinger KVM VPS running Ubuntu.
+
+Goal:
+- Clone the GitHub project.
+- Install PostgreSQL + TimescaleDB.
+- Create database.
+- Apply schema.
+- Install Python dependencies.
+- Configure environment variables.
+- Create systemd services and/or cron jobs.
+- Test ingestion.
+- Test feature/label/model pipeline.
+- Set up weekly database backup/export.
+
+
+SERVER ASSUMPTIONS
+------------------
+
+OS:
+    Ubuntu 22.04 or Ubuntu 24.04
+
+Project path:
+    /opt/niftyoptionsai
+
+Linux user:
+    niftyai
+
+Database:
+    name: niftyoptionsai
+    user: niftyai
+    port: 5432
+
+Python:
+    Python 3.10+
+
+Official references if needed:
+- TimescaleDB Linux install:
+  https://docs.timescale.com/self-hosted/latest/install/installation-linux/
+- PostgreSQL Ubuntu packages:
+  https://www.postgresql.org/download/linux/ubuntu/
+
+
+STEP 1 - BASIC SERVER SETUP
+---------------------------
+
+Run as root or sudo user:
+
+    sudo apt update
+    sudo apt upgrade -y
+    sudo apt install -y curl wget git vim unzip build-essential software-properties-common ca-certificates gnupg lsb-release
+    sudo apt install -y python3 python3-venv python3-pip
+
+Create app user:
+
+    sudo adduser --disabled-password --gecos "" niftyai
+    sudo usermod -aG sudo niftyai
+
+Create project directory:
+
+    sudo mkdir -p /opt/niftyoptionsai
+    sudo chown -R niftyai:niftyai /opt/niftyoptionsai
+
+
+STEP 2 - INSTALL POSTGRESQL + TIMESCALEDB
+-----------------------------------------
+
+Preferred approach: install PostgreSQL and TimescaleDB from official package
+repositories.
+
+On Ubuntu, package names vary depending on Ubuntu and PostgreSQL version.
+Use PostgreSQL 16 or 17. PostgreSQL 16 is usually easier on Ubuntu VPS.
+
+Install PostgreSQL:
+
+    sudo apt install -y postgresql postgresql-contrib
+
+Check version:
+
+    psql --version
+    pg_lsclusters
+
+Install TimescaleDB following the official Timescale Linux instructions:
+
+    https://docs.timescale.com/self-hosted/latest/install/installation-linux/
+
+Common package examples:
+
+    sudo apt install -y timescaledb-2-postgresql-16
+
+or, if PostgreSQL 17 is installed and the package exists:
+
+    sudo apt install -y timescaledb-2-postgresql-17
+
+Tune TimescaleDB:
+
+    sudo timescaledb-tune --quiet --yes
+    sudo systemctl restart postgresql
+
+Verify PostgreSQL is running:
+
+    sudo systemctl status postgresql --no-pager
+
+
+STEP 3 - CREATE DATABASE AND USER
+---------------------------------
+
+Run:
+
+    sudo -u postgres psql
+
+Inside psql:
+
+    CREATE USER niftyai WITH PASSWORD 'CHANGE_THIS_STRONG_PASSWORD';
+    CREATE DATABASE niftyoptionsai OWNER niftyai;
+    \c niftyoptionsai
+    CREATE EXTENSION IF NOT EXISTS timescaledb;
+    GRANT ALL PRIVILEGES ON DATABASE niftyoptionsai TO niftyai;
+    \q
+
+Keep the password. It will be used in /opt/niftyoptionsai/.env.
+
+
+STEP 4 - CLONE PROJECT FROM GITHUB
+----------------------------------
+
+Switch to app user:
+
+    sudo su - niftyai
+
+Clone:
+
+    git clone https://github.com/YOUR_GITHUB_USERNAME/niftyoptionsai.git /opt/niftyoptionsai
+    cd /opt/niftyoptionsai
+
+If private repo, use GitHub token or SSH deploy key.
+
+
+STEP 5 - CREATE PYTHON VIRTUAL ENV
+----------------------------------
+
+Run:
+
+    cd /opt/niftyoptionsai
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install --upgrade pip
+    pip install -r requirements.txt
+
+Verify:
+
+    python -c "import pandas, xgboost, sklearn, psycopg2, websocket; print('python deps ok')"
+
+
+STEP 6 - CREATE ENV FILE
+------------------------
+
+Create:
+
+    nano /opt/niftyoptionsai/.env
+
+Put this:
+
+    NIFTYAI_DB_HOST=localhost
+    NIFTYAI_DB_PORT=5432
+    NIFTYAI_DB_NAME=niftyoptionsai
+    NIFTYAI_DB_USER=niftyai
+    NIFTYAI_DB_PASSWORD=CHANGE_THIS_STRONG_PASSWORD
+
+    DHAN_CLIENT_ID=1101761739
+    DHAN_ACCESS_TOKEN=PASTE_FRESH_DHAN_ACCESS_TOKEN_HERE
+
+    AUTO_SELECT_ATM_CONTRACTS=1
+    AUTO_ATM_STRIKES_EACH_SIDE=2
+    OPTION_OHLC_ATM_STRIKES_EACH_SIDE=0
+    OPTION_OHLC_INTERVAL_SECONDS=300
+
+Secure it:
+
+    chmod 600 /opt/niftyoptionsai/.env
+
+IMPORTANT:
+Never commit .env to GitHub.
+
+
+STEP 7 - LOAD ENV VARIABLES FOR COMMANDS
+----------------------------------------
+
+The project currently reads environment variables directly.
+For manual commands, run:
+
+    set -a
+    source /opt/niftyoptionsai/.env
+    set +a
+
+
+STEP 8 - APPLY DATABASE SCHEMA
+------------------------------
+
+Run:
+
+    cd /opt/niftyoptionsai
+    set -a && source .env && set +a
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -f db/schema.sql
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -f db/model_registry.sql
+
+Verify:
+
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -c "SELECT extname, extversion FROM pg_extension WHERE extname='timescaledb';"
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -c "SELECT hypertable_name FROM timescaledb_information.hypertables ORDER BY hypertable_name;"
+
+
+STEP 9 - IMPORTANT CODE COMPATIBILITY CHECK
+-------------------------------------------
+
+Run:
+
+    cd /opt/niftyoptionsai
+    source .venv/bin/activate
+    set -a && source .env && set +a
+    python -m compileall .
+
+Then run setup verifier:
+
+    python scripts/verify_setup.py
+
+Expected:
+- TimescaleDB extension PASS
+- Hypertables PASS
+- Dhan credentials PASS if token is valid
+- Expiry API PASS
+- Option chain API parse PASS
+
+If token is expired, generate a new Dhan token and update .env.
+
+
+STEP 10 - TEST SHORT INGESTION
+------------------------------
+
+During market hours, run for 2 minutes:
+
+    cd /opt/niftyoptionsai
+    source .venv/bin/activate
+    set -a && source .env && set +a
+    python jobs/run_daily_pipeline.py --symbols NIFTY BANKNIFTY --run-seconds 120 --skip-feature-build
+
+Then check DB:
+
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -c "
+    SELECT 'optionchainsnapshot', COUNT(*), MAX(time) FROM optionchainsnapshot
+    UNION ALL SELECT 'index_ohlc', COUNT(*), MAX(time) FROM index_ohlc
+    UNION ALL SELECT 'option_ohlc', COUNT(*), MAX(time) FROM option_ohlc
+    UNION ALL SELECT 'market_depth', COUNT(*), MAX(time) FROM market_depth;
+    "
+
+Expected:
+- optionchainsnapshot should increase quickly.
+- index_ohlc should insert candles.
+- option_ohlc should insert ATM option candles.
+- market_depth should insert if websocket is not rate-limited.
+
+
+STEP 11 - CREATE DAILY SYSTEMD SERVICE
+--------------------------------------
+
+Create service:
+
+    sudo nano /etc/systemd/system/niftyoptionsai-daily.service
+
+Paste:
+
+    [Unit]
+    Description=Nifty Options AI Daily Pipeline
+    After=network-online.target postgresql.service
+    Wants=network-online.target
+
+    [Service]
+    Type=oneshot
+    User=niftyai
+    WorkingDirectory=/opt/niftyoptionsai
+    EnvironmentFile=/opt/niftyoptionsai/.env
+    ExecStart=/opt/niftyoptionsai/.venv/bin/python /opt/niftyoptionsai/jobs/run_daily_pipeline.py --symbols NIFTY BANKNIFTY --train-model --train-days 30
+    TimeoutStartSec=28800
+    StandardOutput=append:/opt/niftyoptionsai/logs/daily-pipeline.log
+    StandardError=append:/opt/niftyoptionsai/logs/daily-pipeline.err.log
+
+    [Install]
+    WantedBy=multi-user.target
+
+Create logs folder:
+
+    sudo mkdir -p /opt/niftyoptionsai/logs
+    sudo chown -R niftyai:niftyai /opt/niftyoptionsai/logs
+
+Reload:
+
+    sudo systemctl daemon-reload
+
+
+STEP 12 - CREATE DAILY TIMER
+----------------------------
+
+Server timezone must be IST:
+
+    timedatectl
+    sudo timedatectl set-timezone Asia/Kolkata
+    timedatectl
+
+Create timer:
+
+    sudo nano /etc/systemd/system/niftyoptionsai-daily.timer
+
+Paste:
+
+    [Unit]
+    Description=Run Nifty Options AI Daily Pipeline before market open
+
+    [Timer]
+    OnCalendar=Mon..Fri 09:05:00
+    Persistent=true
+    Unit=niftyoptionsai-daily.service
+
+    [Install]
+    WantedBy=timers.target
+
+Enable:
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now niftyoptionsai-daily.timer
+    systemctl list-timers | grep niftyoptionsai
+
+
+STEP 13 - MANUAL START/STOP COMMANDS
+------------------------------------
+
+Start manually:
+
+    sudo systemctl start niftyoptionsai-daily.service
+
+Watch logs:
+
+    tail -f /opt/niftyoptionsai/logs/daily-pipeline.log
+    tail -f /opt/niftyoptionsai/logs/daily-pipeline.err.log
+
+Stop manually:
+
+    sudo systemctl stop niftyoptionsai-daily.service
+
+Check status:
+
+    sudo systemctl status niftyoptionsai-daily.service --no-pager
+
+
+STEP 14 - DAILY TOKEN UPDATE ISSUE
+----------------------------------
+
+If Dhan access token expires daily, the systemd timer will fail unless .env has
+a fresh token before 09:05 IST.
+
+Manual daily update:
+
+    sudo -u niftyai nano /opt/niftyoptionsai/.env
+
+Replace:
+
+    DHAN_ACCESS_TOKEN=...
+
+Then no restart is needed before the timer starts. If the service is already
+running, restart:
+
+    sudo systemctl restart niftyoptionsai-daily.service
+
+To make this fully automatic, implement Dhan token generation safely using the
+official Dhan auth flow. Do not guess this. Use Dhan official docs/account
+settings and store secrets only in /opt/niftyoptionsai/.env or a secret manager.
+
+
+STEP 15 - WEEKLY BACKUP FOR MACBOOK DOWNLOAD
+--------------------------------------------
+
+Create backup folder:
+
+    sudo mkdir -p /opt/niftyoptionsai/backups
+    sudo chown -R niftyai:niftyai /opt/niftyoptionsai/backups
+
+Create script:
+
+    sudo -u niftyai nano /opt/niftyoptionsai/scripts/backup_db.sh
+
+Paste:
+
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd /opt/niftyoptionsai
+    set -a
+    source /opt/niftyoptionsai/.env
+    set +a
+    TS="$(date +%Y%m%d_%H%M%S)"
+    OUT="/opt/niftyoptionsai/backups/niftyoptionsai_${TS}.dump"
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" pg_dump \
+      -h "$NIFTYAI_DB_HOST" \
+      -p "$NIFTYAI_DB_PORT" \
+      -U "$NIFTYAI_DB_USER" \
+      -d "$NIFTYAI_DB_NAME" \
+      -Fc \
+      -f "$OUT"
+    gzip "$OUT"
+    find /opt/niftyoptionsai/backups -type f -name "*.dump.gz" -mtime +30 -delete
+
+Make executable:
+
+    chmod +x /opt/niftyoptionsai/scripts/backup_db.sh
+
+Add weekly cron:
+
+    sudo -u niftyai crontab -e
+
+Add:
+
+    0 18 * * 6 /opt/niftyoptionsai/scripts/backup_db.sh >> /opt/niftyoptionsai/logs/backup.log 2>&1
+
+Download backup to MacBook weekly:
+
+    scp niftyai@YOUR_SERVER_IP:/opt/niftyoptionsai/backups/latest_or_filename.dump.gz ~/Downloads/
+
+Or list backups:
+
+    ssh niftyai@YOUR_SERVER_IP "ls -lh /opt/niftyoptionsai/backups"
+
+
+STEP 16 - RESTORE BACKUP ON MACBOOK
+-----------------------------------
+
+On MacBook, create a restore DB if needed:
+
+    /opt/homebrew/opt/postgresql@17/bin/createdb -p 5433 niftyoptionsai_restore
+
+Restore:
+
+    gunzip -k ~/Downloads/niftyoptionsai_YYYYMMDD_HHMMSS.dump.gz
+    /opt/homebrew/opt/postgresql@17/bin/pg_restore -p 5433 -d niftyoptionsai_restore ~/Downloads/niftyoptionsai_YYYYMMDD_HHMMSS.dump
+
+
+STEP 17 - HEALTH CHECK COMMANDS
+-------------------------------
+
+Run on VPS:
+
+    cd /opt/niftyoptionsai
+    set -a && source .env && set +a
+
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -c "
+    SELECT 'optionchainsnapshot', COUNT(*), MAX(time) FROM optionchainsnapshot
+    UNION ALL SELECT 'index_ohlc', COUNT(*), MAX(time) FROM index_ohlc
+    UNION ALL SELECT 'option_ohlc', COUNT(*), MAX(time) FROM option_ohlc
+    UNION ALL SELECT 'market_depth', COUNT(*), MAX(time) FROM market_depth
+    UNION ALL SELECT 'feature_store', COUNT(*), MAX(time) FROM feature_store;
+    "
+
+Feature/model check:
+
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -c "
+    SELECT DATE(time AT TIME ZONE 'Asia/Kolkata') AS day, symbol, COUNT(*),
+           COUNT(*) FILTER (WHERE label=1) AS label_1,
+           COUNT(*) FILTER (WHERE label=0) AS label_0
+    FROM feature_store
+    GROUP BY day, symbol
+    ORDER BY day, symbol;
+    "
+
+    PGPASSWORD="$NIFTYAI_DB_PASSWORD" psql -h "$NIFTYAI_DB_HOST" -p "$NIFTYAI_DB_PORT" -U "$NIFTYAI_DB_USER" -d "$NIFTYAI_DB_NAME" -c "
+    SELECT version, status, metrics, trained_at
+    FROM model_registry
+    ORDER BY trained_at DESC
+    LIMIT 5;
+    "
+
+
+STEP 18 - COMMON ERRORS
+-----------------------
+
+1. Dhan DH-901 Invalid Authentication
+   Meaning: token expired or wrong token/client id.
+   Fix: generate fresh token, update .env, restart service.
+
+2. Dhan DH-904 Rate Limit
+   Meaning: too many API calls.
+   Current mitigation:
+   - option chain is every few seconds
+   - option OHLC is ATM-only by default
+   - option OHLC interval is 300 seconds
+   - websocket has backoff on 429
+
+3. Websocket 429 / blocked
+   Meaning: Dhan blocked websocket reconnect attempts from IP/client.
+   Fix:
+   - wait 30+ minutes
+   - do not restart repeatedly
+   - keep reconnect backoff enabled
+
+4. Timescale extension missing
+   Fix:
+   - install correct timescaledb package for installed PostgreSQL version
+   - run timescaledb-tune
+   - restart PostgreSQL
+   - run CREATE EXTENSION IF NOT EXISTS timescaledb;
+
+5. Feature store empty after market close
+   Check:
+   - raw data exists
+   - run build manually:
+     python jobs/build_labels_daily.py --date YYYY-MM-DD --symbols NIFTY BANKNIFTY
+
+6. Model not promoted
+   This is normal if metrics are weak.
+   Active model remains the prior better model.
+
+
+STEP 19 - SUCCESS CRITERIA
+--------------------------
+
+The deployment is successful when:
+
+1. PostgreSQL + TimescaleDB is running.
+2. schema.sql applies without errors.
+3. scripts/verify_setup.py passes.
+4. Short ingestion test inserts rows.
+5. Daily systemd timer is enabled.
+6. After market close, feature_store has rows for NIFTY and BANKNIFTY.
+7. model_registry has a new candidate or active model.
+8. Weekly backup file is created.
+
+
+FINAL DAILY OPERATION
+---------------------
+
+If token automation is NOT implemented:
+
+Every morning before 09:05 IST:
+    1. Generate fresh Dhan token.
+    2. Update /opt/niftyoptionsai/.env.
+    3. Let systemd timer start automatically.
+
+If token automation IS implemented:
+    The VPS can run fully unattended.
+

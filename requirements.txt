@@ -1,0 +1,6 @@
+psycopg2-binary
+pandas
+requests
+scikit-learn
+websocket-client
+xgboost
