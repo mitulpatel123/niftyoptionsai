@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from utils.dhan_api import validate_credentials_or_raise
 from utils.logger import get_logger
-from utils.time_utils import IST
+from utils.time_utils import IST, is_market_day, is_trading_holiday
 
 
 LOGGER = get_logger("run_daily_pipeline")
@@ -57,6 +57,22 @@ def main():
     target_date = args.target_date or datetime.now(IST).strftime("%Y-%m-%d")
 
     if not args.skip_ingestion:
+        # Generate the daily access token automatically
+        try:
+            # We import here to avoid circular imports if any, and ensure it's only loaded when needed
+            sys.path.append(str(PROJECT_ROOT))
+            from scripts.auto_token import generate_and_save_dhan_token
+            LOGGER.info("Attempting to auto-generate Dhan Access Token...")
+            success = generate_and_save_dhan_token()
+            if success:
+                # IMPORTANT: Update the loaded `settings` module memory with the new token
+                from config import settings
+                settings.DHAN_ACCESS_TOKEN = os.environ.get('DHAN_ACCESS_TOKEN', settings.DHAN_ACCESS_TOKEN)
+            else:
+                LOGGER.error("Failed to generate Dhan Access Token. Ingestion might fail if the old token is expired.")
+        except Exception as e:
+            LOGGER.error("Error running auto-token generation: %s", e)
+            
         run_ingestion_until_close(args)
 
     if not args.skip_feature_build:
@@ -83,8 +99,11 @@ def run_ingestion_until_close(args):
         microsecond=0,
     )
 
-    if now.weekday() >= 5:
-        LOGGER.warning("Today is not a weekday in IST; ingestion will not be started")
+    if not is_market_day(now):
+        if is_trading_holiday(now):
+            LOGGER.warning("Today is an NSE trading holiday in IST; ingestion will not be started")
+        else:
+            LOGGER.warning("Today is not a weekday in IST; ingestion will not be started")
         return
 
     if now < market_open and not args.no_wait:

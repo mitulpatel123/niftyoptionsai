@@ -10,6 +10,7 @@ from ingest.optionohlcingest import OptionOHLCIngestor
 from ingest.websocket_listener import WebsocketListener
 from utils.dhan_api import DhanCredentialsExpired, DhanCredentialsMissing, validate_credentials_or_raise
 from utils.logger import get_logger
+from utils.time_utils import getcurrentist, is_market_day, is_trading_holiday
 
 
 LOGGER = get_logger("runallingestors")
@@ -51,6 +52,14 @@ def _wait_for_option_chain_snapshot(timeout_seconds=45):
 def main():
     signal.signal(signal.SIGINT, _handle_stop)
     signal.signal(signal.SIGTERM, _handle_stop)
+
+    now = getcurrentist()
+    if not is_market_day(now):
+        if is_trading_holiday(now):
+            LOGGER.warning("Today is an NSE trading holiday in IST; ingestion services will not be started")
+        else:
+            LOGGER.warning("Today is not a weekday in IST; ingestion services will not be started")
+        return
 
     try:
         validate_credentials_or_raise()

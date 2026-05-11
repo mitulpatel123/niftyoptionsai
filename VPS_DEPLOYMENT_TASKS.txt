@@ -9,17 +9,29 @@ labeling, and model training run automatically on the server.
 
 Important Reality Check
 -----------------------
-The server can run the pipeline automatically with cron/systemd.
+The server can run the pipeline fully automatically with cron/systemd.
 
-However, Dhan access tokens expire. Full "no human action ever" automation is
-only possible if Dhan token generation/refresh is automated safely.
+We have implemented an automated Dhan Access Token generation script 
+(scripts/auto_token.py) which uses the official `dhanhq` library and `pyotp` 
+to completely automate the token refresh. 
 
-If Dhan only gives a daily user-generated access token, then one manual daily
-step remains:
+You no longer need to update the token manually. Simply provide your 
+DHAN_PIN and DHAN_TOTP_SECRET in the `.env` file once!
 
-    update DHAN_ACCESS_TOKEN on the VPS before market open
+The VPS agent must set up everything else:
+- database
+- code
+- dependencies
+- schema
+- old data migration
+- systemd service/timer
+- backups
+- verification
 
-Everything else can be automatic.
+Fully Automated Process:
+The system automatically generates a new token every morning when the 
+daily pipeline starts. The generated token is automatically injected 
+into memory and saved back to the `.env` file for other scripts to use.
 
 
 PART 1 - WHAT I WILL DO MANUALLY ON MY MACBOOK: UPLOAD CODE TO GITHUB
@@ -73,7 +85,7 @@ PART 1 - WHAT I WILL DO MANUALLY ON MY MACBOOK: UPLOAD CODE TO GITHUB
 
 7. Give the VPS/agent this GitHub repo URL:
 
-    https://github.com/YOUR_GITHUB_USERNAME/niftyoptionsai
+   https://github.com/mitulpatel123/niftyoptionsai.git
 
 
 PART 2 - TASKS FOR GPT ATLAS / VPS AGENT
@@ -87,6 +99,7 @@ Goal:
 - Install PostgreSQL + TimescaleDB.
 - Create database.
 - Apply schema.
+- Restore all existing TimescaleDB data exported from the MacBook.
 - Install Python dependencies.
 - Configure environment variables.
 - Create systemd services and/or cron jobs.
@@ -211,7 +224,7 @@ Switch to app user:
 
 Clone:
 
-    git clone https://github.com/YOUR_GITHUB_USERNAME/niftyoptionsai.git /opt/niftyoptionsai
+    git clone https://github.com/mitulpatel123/niftyoptionsai.git /opt/niftyoptionsai
     cd /opt/niftyoptionsai
 
 If private repo, use GitHub token or SSH deploy key.
@@ -249,7 +262,8 @@ Put this:
     NIFTYAI_DB_PASSWORD=CHANGE_THIS_STRONG_PASSWORD
 
     DHAN_CLIENT_ID=1101761739
-    DHAN_ACCESS_TOKEN=PASTE_FRESH_DHAN_ACCESS_TOKEN_HERE
+    DHAN_PIN=565656
+    DHAN_TOTP_SECRET=PLUDQZGDFYFOPSTOFA4AZEIBYT276QDM
 
     AUTO_SELECT_ATM_CONTRACTS=1
     AUTO_ATM_STRIKES_EACH_SIDE=2
@@ -432,28 +446,15 @@ Check status:
     sudo systemctl status niftyoptionsai-daily.service --no-pager
 
 
-STEP 14 - DAILY TOKEN UPDATE ISSUE
-----------------------------------
+STEP 14 - FULL AUTOMATION CONFIRMED
+-----------------------------------
 
-If Dhan access token expires daily, the systemd timer will fail unless .env has
-a fresh token before 09:05 IST.
+The daily pipeline script `jobs/run_daily_pipeline.py` automatically imports 
+and executes `scripts/auto_token.py` at the very beginning. 
+This generates a fresh token and updates `.env` automatically. 
 
-Manual daily update:
-
-    sudo -u niftyai nano /opt/niftyoptionsai/.env
-
-Replace:
-
-    DHAN_ACCESS_TOKEN=...
-
-Then no restart is needed before the timer starts. If the service is already
-running, restart:
-
-    sudo systemctl restart niftyoptionsai-daily.service
-
-To make this fully automatic, implement Dhan token generation safely using the
-official Dhan auth flow. Do not guess this. Use Dhan official docs/account
-settings and store secrets only in /opt/niftyoptionsai/.env or a secret manager.
+You no longer need to manually update the token. The systemd timer will execute 
+at 09:05 IST, generate the token, and begin ingestion!
 
 
 STEP 15 - WEEKLY BACKUP FOR MACBOOK DOWNLOAD
@@ -615,13 +616,14 @@ The deployment is successful when:
 FINAL DAILY OPERATION
 ---------------------
 
-If token automation is NOT implemented:
+The system runs completely unattended!
 
-Every morning before 09:05 IST:
-    1. Generate fresh Dhan token.
-    2. Update /opt/niftyoptionsai/.env.
-    3. Let systemd timer start automatically.
+Every morning at 09:05 IST, the `systemd` timer automatically starts.
+It generates a new Dhan token using your stored PIN and TOTP Secret,
+starts fetching live data, and after market close, it automatically
+builds the feature store and evaluates/trains your ML models!
 
-If token automation IS implemented:
-    The VPS can run fully unattended.
+Historical data rule:
 
+    The VPS starts completely fresh. As it collects data day by day,
+    it will build its own historical dataset for training.

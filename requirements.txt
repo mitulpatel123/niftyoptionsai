@@ -4,3 +4,5 @@ requests
 scikit-learn
 websocket-client
 xgboost
+pyotp
+dhanhq>=2.2.0
