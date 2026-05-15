@@ -3,6 +3,8 @@ from datetime import time
 import numpy as np
 import pandas as pd
 
+from ml.black_scholes import calculate_greeks, implied_volatility
+
 
 MARKET_OPEN = time(9, 15)
 MARKET_CLOSE = time(15, 30)
@@ -139,6 +141,36 @@ def option_chain_features(chain_df, timestamp, index_close=None):
         pd.concat([otm_ce["ce_iv"], otm_pe["pe_iv"]], ignore_index=True).dropna()
     )
 
+    # --- Black-Scholes Mathematical Greeks ---
+    bs_ce_iv, bs_pe_iv = np.nan, np.nan
+    bs_ce_greeks, bs_pe_greeks = {}, {}
+    
+    if index_close is not None and pd.notna(index_close):
+        # Calculate time to expiry in years
+        expiry_date = pd.Timestamp(expiry).date()
+        current_date = pd.Timestamp(timestamp).date()
+        days_to_expiry = (expiry_date - current_date).days
+        
+        # Add intraday fractional time
+        time_remaining_minutes = max(0, (15 * 60 + 30) - (timestamp.hour * 60 + timestamp.minute))
+        T_years = (days_to_expiry + time_remaining_minutes / (24 * 60)) / 365.0
+        r = 0.065  # 6.5% risk-free rate approximation for India
+        
+        S = float(index_close)
+        K = float(atm_strike)
+        ce_ltp = safe_float(atm_row.get("ce_ltp"))
+        pe_ltp = safe_float(atm_row.get("pe_ltp"))
+        
+        if ce_ltp is not None:
+            bs_ce_iv = implied_volatility(ce_ltp, S, K, T_years, r, "CE")
+            if not np.isnan(bs_ce_iv):
+                bs_ce_greeks = calculate_greeks(S, K, T_years, r, bs_ce_iv, "CE")
+                
+        if pe_ltp is not None:
+            bs_pe_iv = implied_volatility(pe_ltp, S, K, T_years, r, "PE")
+            if not np.isnan(bs_pe_iv):
+                bs_pe_greeks = calculate_greeks(S, K, T_years, r, bs_pe_iv, "PE")
+
     features = {
         "atm_strike": int(atm_strike),
         "atm_ce_ltp": safe_float(atm_row.get("ce_ltp")),
@@ -173,6 +205,16 @@ def option_chain_features(chain_df, timestamp, index_close=None):
             near_atm["ce_theta"].abs().fillna(0).sum()
             + near_atm["pe_theta"].abs().fillna(0).sum()
         ),
+        "bs_ce_iv": safe_float(bs_ce_iv),
+        "bs_pe_iv": safe_float(bs_pe_iv),
+        "bs_ce_delta": safe_float(bs_ce_greeks.get("delta", np.nan)),
+        "bs_pe_delta": safe_float(bs_pe_greeks.get("delta", np.nan)),
+        "bs_ce_gamma": safe_float(bs_ce_greeks.get("gamma", np.nan)),
+        "bs_pe_gamma": safe_float(bs_pe_greeks.get("gamma", np.nan)),
+        "bs_ce_theta": safe_float(bs_ce_greeks.get("theta", np.nan)),
+        "bs_pe_theta": safe_float(bs_pe_greeks.get("theta", np.nan)),
+        "bs_ce_vega": safe_float(bs_ce_greeks.get("vega", np.nan)),
+        "bs_pe_vega": safe_float(bs_pe_greeks.get("vega", np.nan)),
     }
     return features, atm_strike, expiry
 

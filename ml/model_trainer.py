@@ -51,7 +51,11 @@ class ModelTrainer:
         self._validate_training_data(x_train, y_train)
         self._validate_training_data(x_valid, y_valid, validation=True)
 
-        model = self._build_model()
+        num_positive = int(y_train.sum())
+        num_negative = len(y_train) - num_positive
+        scale_pos_weight = float(num_negative / num_positive) if num_positive > 0 else 1.0
+
+        model = self._build_model(scale_pos_weight=scale_pos_weight)
         model.fit(x_train, y_train)
         metrics = self._evaluate(model, x_valid, y_valid)
         metrics.update(
@@ -98,7 +102,7 @@ class ModelTrainer:
         self.registry.record_metrics(bundle["version"], **metrics)
         return bundle["version"], metrics
 
-    def _build_model(self):
+    def _build_model(self, scale_pos_weight=1.0):
         try:
             from xgboost import XGBClassifier
         except Exception as exc:
@@ -111,6 +115,7 @@ class ModelTrainer:
             eval_metric="logloss",
             random_state=42,
             n_jobs=4,
+            scale_pos_weight=scale_pos_weight,
             **self.params,
         )
 
