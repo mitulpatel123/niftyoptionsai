@@ -70,6 +70,20 @@ def linear_slope(x, y):
     return float(np.polyfit(clean["x"], clean["y"], 1)[0])
 
 
+def intraday_vwap(df, timestamp):
+    frame = rows_until(df, timestamp)
+    today = pd.Timestamp(timestamp).date()
+    frame = frame[frame["time"].dt.date == today]
+    if frame.empty:
+        return None
+    typical_price = (frame["high"].astype(float) + frame["low"].astype(float) + frame["close"].astype(float)) / 3.0
+    volume = frame["volume"].astype(float)
+    cum_vol = volume.sum()
+    if cum_vol == 0:
+        return None
+    return float((typical_price * volume).sum() / cum_vol)
+
+
 def index_features(index_df, timestamp):
     frame = rows_until(index_df, timestamp, minutes=60)
     if frame.empty:
@@ -92,6 +106,7 @@ def index_features(index_df, timestamp):
         "index_trend_ma_21": safe_float(close.iloc[-1] - close.tail(21).mean()) if len(close) >= 21 else None,
         "index_trend_ma_50": safe_float(close.iloc[-1] - close.tail(50).mean()) if len(close) >= 50 else None,
         "index_rsi_14": rsi(close, 14),
+        "index_distance_from_vwap": safe_float(latest.get("close") - intraday_vwap(index_df, timestamp)) if pd.notna(latest.get("close")) and intraday_vwap(index_df, timestamp) is not None else None,
         "time_of_day": int(minutes_since_open),
         "is_open_session": int(minutes_since_open < 60),
         "is_mid_session": int(60 <= minutes_since_open < 300),
@@ -108,6 +123,26 @@ def choose_atm_strike(chain_slice, index_close=None):
         return int(liquid.sort_values("total_oi", ascending=False).iloc[0]["strike"])
     distances = (chain_slice["strike"].astype(float) - float(index_close)).abs()
     return int(chain_slice.loc[distances.idxmin(), "strike"])
+
+
+def max_pain_calculation(chain_slice):
+    if chain_slice.empty:
+        return None
+    pain_by_strike = {}
+    strikes = chain_slice["strike"].unique()
+    for strike in strikes:
+        strike_float = float(strike)
+        ce_loss = chain_slice[chain_slice["strike"].astype(float) < strike_float]
+        ce_pain = (strike_float - ce_loss["strike"].astype(float)) * ce_loss["ce_oi"].fillna(0)
+        
+        pe_loss = chain_slice[chain_slice["strike"].astype(float) > strike_float]
+        pe_pain = (pe_loss["strike"].astype(float) - strike_float) * pe_loss["pe_oi"].fillna(0)
+        
+        pain_by_strike[strike_float] = float(ce_pain.sum() + pe_pain.sum())
+        
+    if not pain_by_strike: 
+        return None
+    return float(min(pain_by_strike, key=pain_by_strike.get))
 
 
 def option_chain_features(chain_df, timestamp, index_close=None):
@@ -140,6 +175,8 @@ def option_chain_features(chain_df, timestamp, index_close=None):
     otm_iv = np.nanmean(
         pd.concat([otm_ce["ce_iv"], otm_pe["pe_iv"]], ignore_index=True).dropna()
     )
+    
+    max_pain = max_pain_calculation(chain_slice)
 
     # --- Black-Scholes Mathematical Greeks ---
     bs_ce_iv, bs_pe_iv = np.nan, np.nan
@@ -215,6 +252,7 @@ def option_chain_features(chain_df, timestamp, index_close=None):
         "bs_pe_theta": safe_float(bs_pe_greeks.get("theta", np.nan)),
         "bs_ce_vega": safe_float(bs_ce_greeks.get("vega", np.nan)),
         "bs_pe_vega": safe_float(bs_pe_greeks.get("vega", np.nan)),
+        "distance_from_max_pain": safe_float(float(index_close) - max_pain) if index_close is not None and pd.notna(index_close) and max_pain is not None else None,
     }
     return features, atm_strike, expiry
 

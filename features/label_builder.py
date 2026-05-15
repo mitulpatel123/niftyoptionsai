@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+import json
 
 import pandas as pd
 
@@ -8,10 +9,11 @@ from utils.time_utils import IST
 
 
 class LabelBuilder:
-    def __init__(self, lookahead_minutes=15, profit_points=10.0, stop_points=5.0):
+    def __init__(self, lookahead_minutes=15, risk_reward_ratio=2.0, transaction_cost_points=2.0, min_stop_points=5.0):
         self.lookahead_minutes = lookahead_minutes
-        self.profit_points = profit_points
-        self.stop_points = stop_points
+        self.risk_reward_ratio = risk_reward_ratio
+        self.transaction_cost_points = transaction_cost_points
+        self.min_stop_points = min_stop_points
         self.logger = get_logger(self.__class__.__name__)
 
     def build_labels_for_features(self, features_df):
@@ -57,15 +59,32 @@ class LabelBuilder:
         max_future_move_up = None
         max_future_move_down = None
         price_at_t = None
+        
+        features_json = feature_row.get("features", {})
+        if isinstance(features_json, str):
+            try:
+                features_json = json.loads(features_json)
+            except json.JSONDecodeError:
+                features_json = {}
+                
+        range_15m = features_json.get("atm_option_range_15m")
+        if range_15m is None or pd.isna(range_15m) or range_15m < 5.0:
+            range_15m = 10.0
+            
+        stop_points = max(self.min_stop_points, float(range_15m) * 0.5)
+        profit_points = stop_points * self.risk_reward_ratio
 
         if not future.empty:
             price_at_t = float(future.iloc[0]["close"])
             future_moves = future["close"].astype(float) - price_at_t
             max_future_move_up = float(future_moves.max())
             max_future_move_down = float(future_moves.min())
+            
+            net_profit = max_future_move_up - self.transaction_cost_points
+            
             label = int(
-                max_future_move_up >= self.profit_points
-                and max_future_move_down > -self.stop_points
+                net_profit >= profit_points
+                and max_future_move_down > -stop_points
             )
 
         return {
@@ -95,7 +114,7 @@ class LabelBuilder:
 
     def _feature_keys_from_store(self, symbol, start_at, end_at):
         query = """
-            SELECT time, symbol, expiry, strike, option_type
+            SELECT time, symbol, expiry, strike, option_type, features
             FROM feature_store
             WHERE symbol = %s AND time >= %s AND time < %s
             ORDER BY time
