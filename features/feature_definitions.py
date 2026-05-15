@@ -128,17 +128,20 @@ def choose_atm_strike(chain_slice, index_close=None):
 def max_pain_calculation(chain_slice):
     if chain_slice.empty:
         return None
+    
+    strikes_arr = chain_slice["strike"].astype(float).values
+    ce_oi_arr = chain_slice["ce_oi"].fillna(0).values
+    pe_oi_arr = chain_slice["pe_oi"].fillna(0).values
+    
     pain_by_strike = {}
-    strikes = chain_slice["strike"].unique()
-    for strike in strikes:
-        strike_float = float(strike)
-        ce_loss = chain_slice[chain_slice["strike"].astype(float) < strike_float]
-        ce_pain = (strike_float - ce_loss["strike"].astype(float)) * ce_loss["ce_oi"].fillna(0)
+    for strike in np.unique(strikes_arr):
+        ce_loss_mask = strikes_arr < strike
+        pe_loss_mask = strikes_arr > strike
         
-        pe_loss = chain_slice[chain_slice["strike"].astype(float) > strike_float]
-        pe_pain = (pe_loss["strike"].astype(float) - strike_float) * pe_loss["pe_oi"].fillna(0)
+        ce_pain = (strike - strikes_arr[ce_loss_mask]) * ce_oi_arr[ce_loss_mask]
+        pe_pain = (strikes_arr[pe_loss_mask] - strike) * pe_oi_arr[pe_loss_mask]
         
-        pain_by_strike[strike_float] = float(ce_pain.sum() + pe_pain.sum())
+        pain_by_strike[strike] = float(ce_pain.sum() + pe_pain.sum())
         
     if not pain_by_strike: 
         return None
