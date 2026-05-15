@@ -26,8 +26,9 @@ def parse_args():
         help="Symbols to build labels for",
     )
     parser.add_argument("--lookahead-minutes", type=int, default=15)
-    parser.add_argument("--profit-points", type=float, default=10.0)
-    parser.add_argument("--stop-points", type=float, default=5.0)
+    parser.add_argument("--risk-reward-ratio", type=float, default=2.0)
+    parser.add_argument("--transaction-cost-points", type=float, default=2.0)
+    parser.add_argument("--min-stop-points", type=float, default=5.0)
     parser.add_argument(
         "--no-write",
         action="store_true",
@@ -44,8 +45,9 @@ def main():
 
     label_builder = LabelBuilder(
         lookahead_minutes=args.lookahead_minutes,
-        profit_points=args.profit_points,
-        stop_points=args.stop_points,
+        risk_reward_ratio=args.risk_reward_ratio,
+        transaction_cost_points=args.transaction_cost_points,
+        min_stop_points=args.min_stop_points,
     )
     labels = label_builder.build_labels_for_features(features)
     LOGGER.info("Built %s labels", len(labels))
