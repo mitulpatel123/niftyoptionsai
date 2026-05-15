@@ -56,7 +56,7 @@ class ModelTrainer:
         scale_pos_weight = float(num_negative / num_positive) if num_positive > 0 else 1.0
 
         model = self._build_model(scale_pos_weight=scale_pos_weight)
-        model.fit(x_train, y_train)
+        model.fit(x_train, y_train, verbose=True)
         metrics = self._evaluate(model, x_valid, y_valid)
         metrics.update(
             {
@@ -114,7 +114,8 @@ class ModelTrainer:
             objective="binary:logistic",
             eval_metric="logloss",
             random_state=42,
-            n_jobs=4,
+            n_jobs=1,
+            verbosity=1,
             scale_pos_weight=scale_pos_weight,
             **self.params,
         )
