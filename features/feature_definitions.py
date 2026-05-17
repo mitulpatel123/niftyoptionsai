@@ -108,9 +108,6 @@ def index_features(index_df, timestamp):
         "index_rsi_14": rsi(close, 14),
         "index_distance_from_vwap": safe_float(latest.get("close") - intraday_vwap(index_df, timestamp)) if pd.notna(latest.get("close")) and intraday_vwap(index_df, timestamp) is not None else None,
         "time_of_day": int(minutes_since_open),
-        "is_open_session": int(minutes_since_open < 60),
-        "is_mid_session": int(60 <= minutes_since_open < 300),
-        "is_close_session": int(minutes_since_open >= 300),
     }
 
 
@@ -212,7 +209,6 @@ def option_chain_features(chain_df, timestamp, index_close=None):
                 bs_pe_greeks = calculate_greeks(S, K, T_years, r, bs_pe_iv, "PE")
 
     features = {
-        "atm_strike": int(atm_strike),
         "atm_ce_ltp": safe_float(atm_row.get("ce_ltp")),
         "atm_pe_ltp": safe_float(atm_row.get("pe_ltp")),
         "atm_ce_iv": safe_float(atm_row.get("ce_iv")),
@@ -222,7 +218,6 @@ def option_chain_features(chain_df, timestamp, index_close=None):
         "atm_ce_oi_change": safe_float(atm_row.get("ce_oi") - atm_row.get("ceprevoi")) if pd.notna(atm_row.get("ceprevoi")) else None,
         "atm_pe_oi_change": safe_float(atm_row.get("pe_oi") - atm_row.get("peprevoi")) if pd.notna(atm_row.get("peprevoi")) else None,
         "pcr_oi": safe_div(total_pe_oi, total_ce_oi),
-        "pcr_volume": None,
         "iv_skew_otm": safe_float(otm_iv - atm_iv) if not pd.isna(otm_iv) and not pd.isna(atm_iv) else None,
         "ce_iv_slope_across_strikes": linear_slope(chain_slice["strike"], chain_slice["ce_iv"]),
         "pe_iv_slope_across_strikes": linear_slope(chain_slice["strike"], chain_slice["pe_iv"]),
@@ -231,7 +226,6 @@ def option_chain_features(chain_df, timestamp, index_close=None):
         "atm_ce_delta": safe_float(atm_row.get("ce_delta")),
         "atm_pe_delta": safe_float(atm_row.get("pe_delta")),
         "atm_ce_gamma": safe_float(atm_row.get("ce_gamma")),
-        "atm_pe_gamma": safe_float(atm_row.get("pe_gamma")),
         "atm_ce_theta": safe_float(atm_row.get("ce_theta")),
         "atm_pe_theta": safe_float(atm_row.get("pe_theta")),
         "atm_ce_vega": safe_float(atm_row.get("ce_vega")),
@@ -280,7 +274,6 @@ def option_price_features(option_df, timestamp, strike, option_type):
         "atm_option_return_5m": price_return(close, 5),
         "atm_option_range_15m": safe_float(recent_15["high"].max() - recent_15["low"].min()),
         "atm_option_volatility_15m": safe_float(close.pct_change().dropna().tail(15).std()),
-        "recent_high_breakout_flag": int(pd.notna(prior_high) and latest["close"] > prior_high),
         "recent_low_breakdown_flag": int(pd.notna(prior_low) and latest["close"] < prior_low),
     }
 
@@ -320,6 +313,4 @@ def expiry_features(timestamp, expiry):
     return {
         "days_to_expiry": int(days),
         "is_expiry_day": int(days == 0),
-        "is_weekly_expiry": 1,
-        "is_monthly_expiry": int(expiry_date.day >= 24),
     }
