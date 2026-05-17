@@ -80,12 +80,20 @@ class LabelBuilder:
             max_future_move_up = float(future_moves.max())
             max_future_move_down = float(future_moves.min())
             
-            net_profit = max_future_move_up - self.transaction_cost_points
+            target_gross_move = profit_points + self.transaction_cost_points
+            hit_target = False
+            hit_stop = False
             
-            label = int(
-                net_profit >= profit_points
-                and max_future_move_down > -stop_points
-            )
+            for future_price in future["close"]:
+                move = float(future_price) - price_at_t
+                if move <= -stop_points:
+                    hit_stop = True
+                    break
+                if move >= target_gross_move:
+                    hit_target = True
+                    break
+                    
+            label = int(hit_target and not hit_stop)
 
         return {
             "time": timestamp,
