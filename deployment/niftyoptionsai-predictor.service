@@ -10,7 +10,8 @@ WorkingDirectory=/opt/niftyoptionsai
 EnvironmentFile=/opt/niftyoptionsai/.env
 # We run it in continuous mode, tracking BANKNIFTY by default. 
 # Feel free to change this to NIFTY or both in a separate process.
-ExecStart=/opt/niftyoptionsai/.venv/bin/python /opt/niftyoptionsai/scripts/live_predictor.py --symbol BANKNIFTY --continuous
+# We use -u so Python doesn't buffer the output and logs appear immediately!
+ExecStart=/opt/niftyoptionsai/.venv/bin/python -u /opt/niftyoptionsai/scripts/live_predictor.py --symbol BANKNIFTY --continuous
 Restart=always
 RestartSec=10
 StandardOutput=append:/opt/niftyoptionsai/logs/live-predictor.log
