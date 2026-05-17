@@ -51,11 +51,14 @@ def main():
         market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
         
         if not is_market_day(now) or now < market_open or now > market_close:
-            print("🕒 Market is currently closed. Running a test prediction on the last available data...")
-            run_prediction(engineer, preprocessor, model, artifact, args.symbol, today=True)
             if not args.continuous:
+                print("🕒 Market is currently closed. Running a test prediction on the last available data...")
+                run_prediction(engineer, preprocessor, model, artifact, args.symbol, today=True)
                 break
-            print("💤 Sleeping until market opens...")
+                
+            # Sleep 60 seconds quietly without printing, unless it's the exact hour
+            if now.minute == 0 and now.second < 60:
+                print(f"💤 [{now.strftime('%H:%M:%S')}] Market is closed. Waiting for open...")
             time.sleep(60)
             continue
             
