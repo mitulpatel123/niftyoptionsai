@@ -103,7 +103,10 @@ def run_prediction(engineer, preprocessor, model, artifact, symbol, today=True):
         return
         
     prob = model.predict_proba(X)[0][1]
-    prediction = int(prob > 0.5)
+    
+    # Read the dynamic optimal threshold calculated during training (default 0.5)
+    optimal_threshold = bundle.get("metrics", {}).get("optimal_threshold", 0.5)
+    prediction = int(prob >= optimal_threshold)
     
     dist_vwap = latest_row['features'].get('index_distance_from_vwap')
     dist_vwap_str = f"{dist_vwap:.2f}" if dist_vwap is not None else "N/A"
@@ -119,10 +122,10 @@ def run_prediction(engineer, preprocessor, model, artifact, symbol, today=True):
     
     if prediction == 1:
         print(f"🟩 BUY SIGNAL DETECTED! (Confidence: {prob*100:.1f}%)")
-        print("   -> The AI expects a massive breakout! Action recommended.")
+        print(f"   -> AI crossed the Optimal Buying Threshold of {optimal_threshold*100:.1f}%. Action recommended.")
     else:
         print(f"⬛ NO ACTION (Confidence of breakout: {prob*100:.1f}%)")
-        print("   -> The AI sees sideways noise or a trap. Stay out.")
+        print(f"   -> Must cross {optimal_threshold*100:.1f}% to trigger a buy. Stay out.")
     print("-" * 50 + "\n")
 
 if __name__ == "__main__":

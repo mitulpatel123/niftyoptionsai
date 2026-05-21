@@ -11,7 +11,7 @@ from utils.time_utils import IST
 class ModelTrainer:
     def __init__(
         self,
-        max_depth=4,
+        max_depth=6,
         learning_rate=0.05,
         n_estimators=300,
         subsample=0.9,
@@ -129,12 +129,30 @@ class ModelTrainer:
             ) from exc
 
         probabilities = model.predict_proba(x_valid)[:, 1]
-        predictions = (probabilities >= 0.5).astype(int)
+        
+        best_f1 = -1.0
+        best_threshold = 0.5
+        
+        # Test thresholds from 0.05 to 0.95 to find the optimal decision boundary
+        for thresh in np.arange(0.05, 0.96, 0.05):
+            preds = (probabilities >= thresh).astype(int)
+            f = float(f1_score(y_valid, preds, zero_division=0))
+            if f > best_f1:
+                best_f1 = f
+                best_threshold = float(thresh)
+                
+        # If the model is completely blind and all F1s are 0, default to 0.5
+        if best_f1 <= 0:
+            best_threshold = 0.5
+            
+        predictions = (probabilities >= best_threshold).astype(int)
+        
         metrics = {
             "accuracy": float(accuracy_score(y_valid, predictions)),
             "precision": float(precision_score(y_valid, predictions, zero_division=0)),
             "recall": float(recall_score(y_valid, predictions, zero_division=0)),
             "f1": float(f1_score(y_valid, predictions, zero_division=0)),
+            "optimal_threshold": float(best_threshold),
         }
         if len(set(y_valid)) > 1:
             metrics["roc_auc"] = float(roc_auc_score(y_valid, probabilities))
