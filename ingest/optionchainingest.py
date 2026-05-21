@@ -148,4 +148,6 @@ class OptionChainIngestor:
                 self.logger.info("Inserted %s option chain rows", len(rows))
             except Exception:
                 self.logger.exception("Option chain ingestion failed")
+                time.sleep(60)  # Backoff for 60 seconds to clear Dhan rate limits
+                continue
             time.sleep(self.interval_seconds)
