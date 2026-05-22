@@ -66,6 +66,8 @@ def main():
             LOGGER.info("Attempting to auto-generate Dhan Access Token...")
             success = generate_and_save_dhan_token()
             if success:
+                from dotenv import load_dotenv
+                load_dotenv(override=True)
                 # IMPORTANT: Update the loaded `settings` module memory with the new token
                 from config import settings
                 settings.DHAN_ACCESS_TOKEN = os.environ.get('DHAN_ACCESS_TOKEN', settings.DHAN_ACCESS_TOKEN)
