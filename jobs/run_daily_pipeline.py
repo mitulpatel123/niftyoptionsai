@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument("--skip-feature-build", action="store_true")
     parser.add_argument("--train-model", action="store_true")
     parser.add_argument("--train-days", type=int, default=30)
-    parser.add_argument("--optuna-trials", type=int, default=0, help="Number of Optuna trials to run during training")
+    parser.add_argument("--optuna-trials", type=int, default=50, help="Number of Optuna trials to run during training")
     parser.add_argument(
         "--run-seconds",
         type=int,
