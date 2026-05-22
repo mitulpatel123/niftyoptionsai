@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import json
 
 import numpy as np
 import pandas as pd
@@ -32,11 +33,26 @@ class FeaturePreprocessor:
         self.logger.info("Loaded %s feature_store rows", len(frame))
         return frame
 
+    def _normalize_feature_column(self, feature_series):
+        def parse_feature_value(value):
+            if isinstance(value, str):
+                try:
+                    return json.loads(value)
+                except json.JSONDecodeError:
+                    return {}
+            if value is None or (isinstance(value, float) and np.isnan(value)):
+                return {}
+            return value if isinstance(value, dict) else {}
+
+        parsed = feature_series.apply(parse_feature_value)
+        feature_frame = pd.json_normalize(parsed).replace([np.inf, -np.inf], np.nan)
+        return feature_frame
+
     def flatten_features(self, frame):
         if frame.empty:
             return pd.DataFrame()
 
-        feature_frame = pd.json_normalize(frame["features"]).replace([np.inf, -np.inf], np.nan)
+        feature_frame = self._normalize_feature_column(frame.get("features", pd.Series([{}] * len(frame))))
         metadata = frame[["time", "symbol", "expiry", "strike", "option_type", "label"]].reset_index(drop=True)
         flat = pd.concat([metadata, feature_frame], axis=1)
         return flat
@@ -68,7 +84,7 @@ class FeaturePreprocessor:
         if frame.empty:
             return pd.DataFrame()
 
-        feature_values = pd.json_normalize(frame["features"])
+        feature_values = self._normalize_feature_column(frame.get("features", pd.Series([{}] * len(frame))))
         base = pd.concat(
             [
                 frame[["symbol", "strike", "option_type"]].reset_index(drop=True),

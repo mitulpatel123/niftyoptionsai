@@ -70,6 +70,7 @@ class ModelTrainer:
         version = self._new_version()
         train_start = metadata["time"].min() if not metadata.empty else None
         train_end = metadata["time"].max() if not metadata.empty else None
+        artifact["decision_threshold"] = float(metrics.get("optimal_threshold", 0.5))
         self.registry.save_model(
             model=model,
             version=version,

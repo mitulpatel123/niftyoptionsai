@@ -105,7 +105,7 @@ def run_prediction(engineer, preprocessor, model, artifact, symbol, today=True):
     prob = model.predict_proba(X)[0][1]
     
     # Read the dynamic optimal threshold calculated during training (default 0.5)
-    optimal_threshold = bundle.get("metrics", {}).get("optimal_threshold", 0.5)
+    optimal_threshold = float(artifact.get("decision_threshold", 0.5))
     prediction = int(prob >= optimal_threshold)
     
     dist_vwap = latest_row['features'].get('index_distance_from_vwap')

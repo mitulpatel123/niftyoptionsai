@@ -23,23 +23,27 @@ class PredictionEngine:
             raise ValueError("No features supplied for prediction")
 
         score = float(self.bundle["model"].predict_proba(x)[0, 1])
-        predicted_label = int(score >= 0.5)
+        threshold = float(self.bundle["artifact"].get("decision_threshold", 0.5))
+        predicted_label = int(score >= threshold)
         return {
             "prediction_score": score,
             "predicted_label": predicted_label,
             "model_version": self.bundle["version"],
+            "decision_threshold": threshold,
         }
 
     def predict_many(self, feature_rows):
         rows = [feature_rows] if isinstance(feature_rows, dict) else list(feature_rows)
         x = self.preprocessor.prepare_inference_data(rows, self.bundle["artifact"])
         probabilities = self.bundle["model"].predict_proba(x)[:, 1]
+        threshold = float(self.bundle["artifact"].get("decision_threshold", 0.5))
         output = []
         for row, score in zip(rows, probabilities):
             prediction = {
                 "prediction_score": float(score),
-                "predicted_label": int(score >= 0.5),
+                "predicted_label": int(score >= threshold),
                 "model_version": self.bundle["version"],
+                "decision_threshold": threshold,
             }
             output.append({**row, **prediction})
         return output
