@@ -4,5 +4,6 @@ requests
 scikit-learn
 websocket-client
 xgboost
+optuna
 pyotp
 dhanhq>=2.2.0

@@ -39,6 +39,7 @@ def parse_args():
     parser.add_argument("--skip-feature-build", action="store_true")
     parser.add_argument("--train-model", action="store_true")
     parser.add_argument("--train-days", type=int, default=30)
+    parser.add_argument("--optuna-trials", type=int, default=0, help="Number of Optuna trials to run during training")
     parser.add_argument(
         "--run-seconds",
         type=int,
@@ -79,7 +80,7 @@ def main():
         build_features_and_labels(target_date, args.symbols)
 
     if args.train_model:
-        train_model(args.train_days)
+        train_model(args.train_days, optuna_trials=args.optuna_trials)
 
 
 def run_ingestion_until_close(args):
@@ -163,8 +164,10 @@ def build_features_and_labels(target_date, symbols):
     subprocess.run(command, cwd=str(PROJECT_ROOT), check=True, env=os.environ.copy())
 
 
-def train_model(days):
+def train_model(days, optuna_trials=0):
     command = [sys.executable, "jobs/trainmodeldaily.py", "--days", str(days)]
+    if optuna_trials and optuna_trials > 0:
+        command.extend(["--optuna-trials", str(optuna_trials)])
     LOGGER.info("Training model: %s", " ".join(command))
     subprocess.run(command, cwd=str(PROJECT_ROOT), check=True, env=os.environ.copy())
 

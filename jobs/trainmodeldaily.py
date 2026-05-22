@@ -24,6 +24,7 @@ def parse_args():
     parser.add_argument("--n-estimators", type=int, default=300)
     parser.add_argument("--subsample", type=float, default=0.9)
     parser.add_argument("--colsample-bytree", type=float, default=0.9)
+    parser.add_argument("--optuna-trials", type=int, default=0, help="Number of Optuna trials to run for hyperparameter search")
     parser.add_argument("--no-promote", action="store_true")
     return parser.parse_args()
 
@@ -43,6 +44,7 @@ def main():
             start_date=args.start_date,
             end_date=args.end_date,
             promote_if_better=not args.no_promote,
+            optuna_trials=args.optuna_trials,
         )
     except Exception as exc:
         LOGGER.error("Training skipped/failed: %s", exc)

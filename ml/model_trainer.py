@@ -2,6 +2,7 @@ from datetime import datetime
 
 import numpy as np
 
+import optuna
 from ml.model_registry import ModelRegistry
 from ml.preprocessing import FeaturePreprocessor
 from utils.logger import get_logger
@@ -32,7 +33,7 @@ class ModelTrainer:
         self.min_promote_roc_auc = 0.52
         self.min_promote_f1 = 0.05
 
-    def train(self, days=30, start_date=None, end_date=None, promote_if_better=True):
+    def train(self, days=30, start_date=None, end_date=None, promote_if_better=True, optuna_trials=0):
         raw = self.preprocessor.load_feature_store(
             start_date=start_date,
             end_date=end_date,
@@ -55,6 +56,12 @@ class ModelTrainer:
         num_negative = len(y_train) - num_positive
         scale_pos_weight = float(num_negative / num_positive) if num_positive > 0 else 1.0
 
+        if optuna_trials and optuna_trials > 0:
+            best_params = self._run_optuna(x_train, y_train, x_valid, y_valid, optuna_trials)
+            self.params.update(best_params)
+        else:
+            best_params = {}
+
         model = self._build_model(scale_pos_weight=scale_pos_weight)
         model.fit(x_train, y_train, verbose=True)
         metrics = self._evaluate(model, x_valid, y_valid)
@@ -70,6 +77,7 @@ class ModelTrainer:
         version = self._new_version()
         train_start = metadata["time"].min() if not metadata.empty else None
         train_end = metadata["time"].max() if not metadata.empty else None
+        artifact["hyperparameters"] = {**self.params}
         artifact["decision_threshold"] = float(metrics.get("optimal_threshold", 0.5))
         self.registry.save_model(
             model=model,
@@ -103,7 +111,7 @@ class ModelTrainer:
         self.registry.record_metrics(bundle["version"], **metrics)
         return bundle["version"], metrics
 
-    def _build_model(self, scale_pos_weight=1.0):
+    def _build_model(self, scale_pos_weight=1.0, extra_params=None):
         try:
             from xgboost import XGBClassifier
         except Exception as exc:
@@ -111,6 +119,7 @@ class ModelTrainer:
                 "xgboost is not installed. Run: python3 -m pip install -r requirements.txt"
             ) from exc
 
+        params = {**self.params, **(extra_params or {})}
         return XGBClassifier(
             objective="binary:logistic",
             eval_metric="logloss",
@@ -118,7 +127,7 @@ class ModelTrainer:
             n_jobs=1,
             verbosity=1,
             scale_pos_weight=scale_pos_weight,
-            **self.params,
+            **params,
         )
 
     def _evaluate(self, model, x_valid, y_valid):
@@ -160,6 +169,36 @@ class ModelTrainer:
         else:
             metrics["roc_auc"] = None
         return metrics
+
+    def _run_optuna(self, x_train, y_train, x_valid, y_valid, trials=50):
+        from sklearn.metrics import f1_score
+
+        scale_pos_weight = float((len(y_train) - y_train.sum()) / (y_train.sum() or 1.0))
+
+        def objective(trial):
+            params = {
+                "max_depth": trial.suggest_int("max_depth", 3, 12),
+                "learning_rate": trial.suggest_loguniform("learning_rate", 0.01, 0.3),
+                "subsample": trial.suggest_float("subsample", 0.5, 1.0),
+                "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
+                "n_estimators": trial.suggest_int("n_estimators", 100, 1000),
+            }
+            model = self._build_model(scale_pos_weight=scale_pos_weight, extra_params=params)
+            model.fit(x_train, y_train, verbose=False)
+            metrics = self._evaluate(model, x_valid, y_valid)
+            return float(metrics.get("f1", 0.0))
+
+        sampler = optuna.samplers.TPESampler(seed=42)
+        study = optuna.create_study(direction="maximize", sampler=sampler)
+        study.optimize(objective, n_trials=trials)
+
+        self.logger.info(
+            "Optuna completed %s trials and selected params=%s best_f1=%.4f",
+            trials,
+            study.best_params,
+            study.best_value,
+        )
+        return study.best_params
 
     def _validate_training_data(self, x, y, validation=False):
         if len(x) < 2:
