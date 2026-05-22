@@ -12,6 +12,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Load .env into os.environ before importing any local modules!
+env_path = PROJECT_ROOT / ".env"
+if env_path.exists():
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ[k.strip()] = v.strip().strip("\"'")
+
 from utils.dhan_api import validate_credentials_or_raise
 from utils.logger import get_logger
 from utils.time_utils import IST, is_market_day, is_trading_holiday
@@ -66,13 +75,6 @@ def main():
             LOGGER.info("Attempting to auto-generate Dhan Access Token...")
             success = generate_and_save_dhan_token()
             if success:
-                env_path = PROJECT_ROOT / ".env"
-                if env_path.exists():
-                    for line in env_path.read_text().splitlines():
-                        line = line.strip()
-                        if line and not line.startswith("#") and "=" in line:
-                            k, v = line.split("=", 1)
-                            os.environ[k.strip()] = v.strip().strip("\"'")
                 # IMPORTANT: Update the loaded `settings` module memory with the new token
                 from config import settings
                 settings.DHAN_ACCESS_TOKEN = os.environ.get('DHAN_ACCESS_TOKEN', settings.DHAN_ACCESS_TOKEN)
