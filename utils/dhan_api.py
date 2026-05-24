@@ -89,7 +89,22 @@ def build_url(path):
     return urljoin(settings.DHAN_BASE_URL.rstrip("/") + "/", path.lstrip("/"))
 
 
-def post_json(path, payload):
+from utils.rate_limiter import rate_limiter
+
+def post_json(path, payload, endpoint_type="data"):
+    endpoint_map = {
+        "/v2/optionchain": "option_chain",
+        "/v2/optionchain/expirylist": "expiry_list",
+        "/v2/charts/intraday": "intraday_chart",
+    }
+    et = endpoint_map.get(path, endpoint_type)
+
+    if not rate_limiter.acquire(et, timeout=60):
+        raise DhanHTTPError(
+            f"Rate limit timeout for {et}. Try again later.",
+            status_code=429
+        )
+
     response = requests.post(
         build_url(path),
         headers=build_headers(),

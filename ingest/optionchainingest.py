@@ -46,7 +46,6 @@ class OptionChainIngestor:
                 "Expiry": expiry,
             }
             response = post_json(settings.DHAN_OPTION_CHAIN_PATH, request_payload)
-            time.sleep(3.5)  # Prevent Dhan HTTP 429 Rate Limiting (Limit is 1 per 3s)
             payloads.append(
                 {
                     "symbol": symbol,

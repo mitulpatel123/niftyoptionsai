@@ -80,7 +80,7 @@ class LabelBuilder:
             max_future_move_up = float(future_moves.max())
             max_future_move_down = float(future_moves.min())
             
-            target_gross_move = profit_points + self.transaction_cost_points
+            target_gross_move = profit_points  # Target is pure profit points. Transaction cost is applied to final P&L.
             hit_target = False
             hit_stop = False
             
