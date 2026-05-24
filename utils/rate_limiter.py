@@ -10,6 +10,7 @@ class DhanRateLimiter:
         "option_chain": {"calls": 1, "period": 3.5},
         "expiry_list": {"calls": 1, "period": 3.5},
         "intraday_chart": {"calls": 3, "period": 1.0},
+        "data": {"calls": 5, "period": 1.0},
     }
 
     _instance = None

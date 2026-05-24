@@ -35,5 +35,6 @@ def get_connection(cursor_factory=RealDictCursor):
         conn.rollback()
         raise
     finally:
+        conn.cursor_factory = None
         pool.putconn(conn)
 
