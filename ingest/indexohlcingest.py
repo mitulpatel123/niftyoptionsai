@@ -36,6 +36,7 @@ class IndexOHLCIngestor:
             }
             try:
                 response = post_json(settings.DHAN_INTRADAY_PATH, payload)
+                time.sleep(0.25)  # Enforce 4 req/sec (Dhan limit is 5/sec)
             except DhanHTTPError as exc:
                 self._handle_chart_error(exc)
                 return rows

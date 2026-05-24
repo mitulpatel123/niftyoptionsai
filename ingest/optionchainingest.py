@@ -46,7 +46,7 @@ class OptionChainIngestor:
                 "Expiry": expiry,
             }
             response = post_json(settings.DHAN_OPTION_CHAIN_PATH, request_payload)
-            time.sleep(0.5)  # Prevent Dhan HTTP 429 Rate Limiting
+            time.sleep(3.5)  # Prevent Dhan HTTP 429 Rate Limiting (Limit is 1 per 3s)
             payloads.append(
                 {
                     "symbol": symbol,
@@ -148,6 +148,6 @@ class OptionChainIngestor:
                 self.logger.info("Inserted %s option chain rows", len(rows))
             except Exception:
                 self.logger.exception("Option chain ingestion failed")
-                time.sleep(60)  # Backoff for 60 seconds to clear Dhan rate limits
+                time.sleep(300)  # Backoff for 5 minutes to clear rolling Dhan rate limits
                 continue
             time.sleep(self.interval_seconds)
