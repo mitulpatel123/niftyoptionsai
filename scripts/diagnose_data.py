@@ -29,6 +29,7 @@ def analyze_gaps(target_date):
         if idx_df.empty:
             print(f"❌ ERROR: No Index OHLC data found for {target_date}!")
         else:
+            idx_df["time"] = pd.to_datetime(idx_df["time"], utc=True)
             for symbol in idx_df["symbol"].unique():
                 sym_df = idx_df[idx_df["symbol"] == symbol].copy()
                 sym_df["diff"] = sym_df["time"].diff().dt.total_seconds()
@@ -46,6 +47,7 @@ def analyze_gaps(target_date):
         if oc_df.empty:
             print(f"❌ ERROR: No Option Chain data found for {target_date}!")
         else:
+            oc_df["time"] = pd.to_datetime(oc_df["time"], utc=True)
             # Group by underlying and unique timestamps (since there are multiple strikes per timestamp)
             unique_times = oc_df.drop_duplicates(subset=["time", "underlying_symbol"])
             for symbol in unique_times["underlying_symbol"].unique():
@@ -65,6 +67,7 @@ def analyze_gaps(target_date):
         if opt_df.empty:
             print(f"❌ ERROR: No Option OHLC data found for {target_date}!")
         else:
+            opt_df["time"] = pd.to_datetime(opt_df["time"], utc=True)
             unique_times = opt_df.drop_duplicates(subset=["time", "symbol"])
             for symbol in unique_times["symbol"].unique():
                 sym_df = unique_times[unique_times["symbol"] == symbol].copy()
