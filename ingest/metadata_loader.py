@@ -1,5 +1,7 @@
 import csv
+from datetime import datetime, timedelta
 from io import StringIO
+from pathlib import Path
 
 from config import settings
 from config.settings import SYMBOLS, UNDERLYINGS
@@ -30,8 +32,39 @@ class MetadataLoader:
         return rows
 
     def fetchinstrumentmetadata(self):
+        # FIX #5: Cache instrument metadata locally to avoid re-downloading on every run
+        cache_file = Path("/tmp/dhan_instrument_master.csv")
+        
+        # Use cached file if it exists and is less than 24 hours old
+        if cache_file.exists():
+            try:
+                file_mtime = datetime.fromtimestamp(cache_file.stat().st_mtime)
+                age = datetime.now() - file_mtime
+                if age < timedelta(hours=24):
+                    self.logger.info(f"Using cached instrument master (age: {age.total_seconds()/3600:.1f}h)")
+                    with open(cache_file, 'r') as f:
+                        csv_text = f.read()
+                    return self._parse_csv_text(csv_text)
+            except Exception as e:
+                self.logger.debug(f"Failed to use cache: {e}, fetching fresh data")
+        
+        # Download fresh metadata from Dhan
+        self.logger.info("Downloading fresh instrument master from Dhan")
         response = get_url(settings.DHAN_INSTRUMENT_MASTER_URL)
-        reader = csv.DictReader(StringIO(response.text))
+        
+        # Cache for next run
+        try:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(response.text)
+            self.logger.info(f"Cached instrument master to {cache_file}")
+        except Exception as e:
+            self.logger.warning(f"Failed to cache instrument master: {e}")
+        
+        return self._parse_csv_text(response.text)
+    
+    def _parse_csv_text(self, csv_text):
+        """Parse CSV text and return parsed instruments"""
+        reader = csv.DictReader(StringIO(csv_text))
         rows = []
 
         for item in reader:

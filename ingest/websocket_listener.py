@@ -24,7 +24,7 @@ class WebsocketListener:
         self.subscriptions = subscriptions
         self.websocket = None
         self.reconnect_delay_seconds = 5
-        self.max_reconnect_delay_seconds = 1800
+        self.max_reconnect_delay_seconds = 300  # FIX #3: Reduced from 1800 (30 min) to 300 (5 min)
         self.connected_at = None
         self.rate_limited = False
 

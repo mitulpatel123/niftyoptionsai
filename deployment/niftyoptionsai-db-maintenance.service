@@ -1,0 +1,13 @@
+[Unit]
+Description=Nifty Options AI Database Maintenance
+Documentation=https://github.com/yourusername/niftyoptionsai
+
+[Service]
+Type=oneshot
+User=niftyai
+WorkingDirectory=/opt/niftyoptionsai
+EnvironmentFile=/opt/niftyoptionsai/.env
+# FIX #8: Database maintenance - cleanup old data, compress, analyze
+ExecStart=/opt/niftyoptionsai/.venv/bin/python -u /opt/niftyoptionsai/scripts/db_maintenance.py
+StandardOutput=append:/opt/niftyoptionsai/logs/db-maintenance.log
+StandardError=append:/opt/niftyoptionsai/logs/db-maintenance.err.log

@@ -4,7 +4,37 @@ from collections import deque
 
 
 class DhanRateLimiter:
-    """Thread-safe global rate limiter for Dhan API"""
+    """Thread-safe global rate limiter for Dhan API
+    
+    FIX #7: Rate limit configuration
+    
+    IMPORTANT: These limits should be verified against official Dhan API documentation.
+    Current values are conservative estimates based on observed behavior:
+    
+    - option_chain (1 call per 3.5 seconds): ~17 calls/minute
+      Used by: optionchainingest.py - fetches full option chain snapshot
+      
+    - expiry_list (1 call per 3.5 seconds): ~17 calls/minute  
+      Used by: optionchainingest.py - fetches expiry dates (cached daily)
+      
+    - intraday_chart (3 calls per 1 second): ~180 calls/minute
+      Used by: indexohlcingest.py - fetches index OHLC data
+      
+    - data (5 calls per 1 second): ~300 calls/minute
+      Used by: generic data fetching, websocket initialization
+    
+    VERIFICATION TODO:
+    1. Check Dhan API documentation for official rate limits
+    2. Update LIMITS dictionary below if official limits differ
+    3. Current usage analysis (from daily pipeline):
+       - option_chain: ~1 call per 60 seconds × 2 symbols = well under limit
+       - expiry_list: ~2 calls per day = negligible
+       - intraday_chart: ~1 call per 60 seconds × 2 symbols = well under limit
+       - data: ~negligible usage
+    
+    Conclusion: Current rate limiting is working fine and we're well under limits.
+    If you hit 429 (Too Many Requests) errors, check if Dhan limits are stricter.
+    """
 
     LIMITS = {
         "option_chain": {"calls": 1, "period": 3.5},

@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 
 from config import settings
 from config.settings import OPTION_CHAIN_INTERVAL_SECONDS, SYMBOLS, UNDERLYINGS
@@ -14,14 +15,23 @@ class OptionChainIngestor:
         self.interval_seconds = interval_seconds
         self.logger = get_logger(self.__class__.__name__)
         self._expiry_cache = {}
+        self._expiry_cache_time = {}  # Track when expiry was cached (for daily refresh)
 
     def build_headers(self):
         return build_headers()
 
     def _fetch_expiry(self, symbol):
-        if symbol in self._expiry_cache:
-            return self._expiry_cache[symbol]
-
+        # FIX #2: Refresh expiry cache daily (not once per run forever)
+        now = getcurrentist()
+        cached_time = self._expiry_cache_time.get(symbol)
+        
+        # Return cached expiry if less than 24 hours old
+        if cached_time and symbol in self._expiry_cache:
+            age = (now - cached_time).total_seconds()
+            if age < 86400:  # 24 hours
+                return self._expiry_cache[symbol]
+        
+        # Fetch fresh expiry from API
         underlying = UNDERLYINGS[symbol]
         payload = {
             "UnderlyingScrip": int(underlying["security_id"]),
@@ -32,8 +42,11 @@ class OptionChainIngestor:
         if not expiries:
             raise RuntimeError(f"No expiries returned by Dhan for {symbol}")
 
-        self._expiry_cache[symbol] = expiries[0]
-        return self._expiry_cache[symbol]
+        expiry = expiries[0]
+        self._expiry_cache[symbol] = expiry
+        self._expiry_cache_time[symbol] = now
+        self.logger.info(f"Refreshed {symbol} expiry cache: {expiry}")
+        return expiry
 
     def fetchoptionchain(self):
         payloads = []
@@ -58,6 +71,8 @@ class OptionChainIngestor:
     def parseoptionchain(self, payload):
         rows = []
         received_at = getcurrentist()
+        skipped_count = 0  # Track garbage rows skipped
+        skipped_reasons = {"zero_ltp": 0, "invalid_spread": 0}
 
         for item in payload:
             symbol = item["symbol"]
@@ -69,6 +84,33 @@ class OptionChainIngestor:
                 pe = strike_data.get("pe") or {}
                 ce_greeks = ce.get("greeks") or {}
                 pe_greeks = pe.get("greeks") or {}
+                
+                # FIX #1 & #4: Data quality filtering - skip garbage rows before storage
+                ce_ltp = ce.get("last_price")
+                pe_ltp = pe.get("last_price")
+                
+                # Skip rows with zero LTP (no pricing data - illiquid strikes)
+                if (ce_ltp is None or ce_ltp == 0) and (pe_ltp is None or pe_ltp == 0):
+                    skipped_count += 1
+                    skipped_reasons["zero_ltp"] += 1
+                    continue
+                
+                # Skip rows with invalid bid-ask spreads (data corruption)
+                ce_bid = ce.get("top_bid_price")
+                ce_ask = ce.get("top_ask_price")
+                pe_bid = pe.get("top_bid_price")
+                pe_ask = pe.get("top_ask_price")
+                
+                # Validate bid-ask: ask should be >= bid
+                if ce_bid and ce_ask and ce_ask < ce_bid:
+                    skipped_count += 1
+                    skipped_reasons["invalid_spread"] += 1
+                    continue
+                
+                if pe_bid and pe_ask and pe_ask < pe_bid:
+                    skipped_count += 1
+                    skipped_reasons["invalid_spread"] += 1
+                    continue
 
                 rows.append(
                     {
@@ -76,8 +118,8 @@ class OptionChainIngestor:
                         "underlying_symbol": symbol,
                         "expiry": expiry,
                         "strike": int(float(strike_text)),
-                        "ce_ltp": ce.get("last_price"),
-                        "pe_ltp": pe.get("last_price"),
+                        "ce_ltp": ce_ltp,
+                        "pe_ltp": pe_ltp,
                         "ce_oi": ce.get("oi"),
                         "pe_oi": pe.get("oi"),
                         "ceprevoi": ce.get("previous_oi"),
@@ -92,13 +134,13 @@ class OptionChainIngestor:
                         "pe_gamma": pe_greeks.get("gamma"),
                         "pe_theta": pe_greeks.get("theta"),
                         "pe_vega": pe_greeks.get("vega"),
-                        "ce_bid": ce.get("top_bid_price"),
+                        "ce_bid": ce_bid,
                         "cebidqty": ce.get("top_bid_quantity"),
-                        "ce_ask": ce.get("top_ask_price"),
+                        "ce_ask": ce_ask,
                         "ceaskqty": ce.get("top_ask_quantity"),
-                        "pe_bid": pe.get("top_bid_price"),
+                        "pe_bid": pe_bid,
                         "pebidqty": pe.get("top_bid_quantity"),
-                        "pe_ask": pe.get("top_ask_price"),
+                        "pe_ask": pe_ask,
                         "peaskqty": pe.get("top_ask_quantity"),
                         "ceavgprice": ce.get("average_price"),
                         "peavgprice": pe.get("average_price"),
@@ -106,6 +148,15 @@ class OptionChainIngestor:
                         "pesecurityid": pe.get("security_id"),
                     }
                 )
+        
+        # Log data quality metrics
+        total = len(rows) + skipped_count
+        if total > 0:
+            skipped_pct = (skipped_count / total) * 100
+            self.logger.info(
+                f"Option chain parsed: {len(rows)} kept, {skipped_count} skipped ({skipped_pct:.1f}%) - "
+                f"zero_ltp: {skipped_reasons['zero_ltp']}, invalid_spread: {skipped_reasons['invalid_spread']}"
+            )
 
         return rows
 

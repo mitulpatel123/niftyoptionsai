@@ -1,0 +1,13 @@
+[Unit]
+Description=Nifty Options AI Database Maintenance Timer
+Documentation=https://github.com/yourusername/niftyoptionsai
+
+[Timer]
+# FIX #8: Schedule daily database maintenance at 16:00 IST (after market close + feature build)
+# IST = UTC+5:30, so 16:00 IST = 10:30 UTC
+OnCalendar=*-*-* 10:30:00
+Persistent=true
+Unit=niftyoptionsai-db-maintenance.service
+
+[Install]
+WantedBy=timers.target

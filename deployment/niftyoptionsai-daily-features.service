@@ -1,0 +1,17 @@
+[Unit]
+Description=Nifty Options AI Daily Feature Build & Model Training
+After=postgresql.service
+Documentation=https://github.com/yourusername/niftyoptionsai
+
+[Service]
+Type=oneshot
+User=niftyai
+WorkingDirectory=/opt/niftyoptionsai
+EnvironmentFile=/opt/niftyoptionsai/.env
+# FIX #6: Daily feature build scheduled after market close (15:35 IST)
+# Runs feature building and optional model training
+ExecStart=/opt/niftyoptionsai/.venv/bin/python -u /opt/niftyoptionsai/jobs/run_daily_pipeline.py \
+    --skip-ingestion \
+    --symbols NIFTY BANKNIFTY
+StandardOutput=append:/opt/niftyoptionsai/logs/daily-features.log
+StandardError=append:/opt/niftyoptionsai/logs/daily-features.err.log
