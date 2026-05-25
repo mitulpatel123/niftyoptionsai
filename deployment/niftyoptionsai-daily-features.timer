@@ -5,8 +5,8 @@ Documentation=https://github.com/yourusername/niftyoptionsai
 [Timer]
 # FIX #6: Schedule daily feature builds at 15:35 IST (market close + 5 min buffer)
 # This runs after market hours to ensure all data is available
-# IST = UTC+5:30, so 15:35 IST = 10:05 UTC
-OnCalendar=*-*-* 10:05:00
+# IST = UTC+5:30, since the server is in IST, we just use 15:35:00
+OnCalendar=*-*-* 15:35:00
 Persistent=true
 Unit=niftyoptionsai-daily-features.service
 

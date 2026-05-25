@@ -4,8 +4,8 @@ Documentation=https://github.com/yourusername/niftyoptionsai
 
 [Timer]
 # FIX #8: Schedule daily database maintenance at 16:00 IST (after market close + feature build)
-# IST = UTC+5:30, so 16:00 IST = 10:30 UTC
-OnCalendar=*-*-* 10:30:00
+# IST = UTC+5:30, since the server is in IST, we just use 16:00:00
+OnCalendar=*-*-* 16:00:00
 Persistent=true
 Unit=niftyoptionsai-db-maintenance.service
 
